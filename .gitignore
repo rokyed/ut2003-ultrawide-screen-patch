@@ -1,0 +1,7 @@
+# Only the distributable patch sources belong in this repository.
+/*
+!/.gitignore
+!/README.md
+!/apply.sh
+!/configure.py
+!/launch-ut2003.sh
