@@ -16,6 +16,12 @@ Place this repository directly inside your UT2003 game directory; run from any d
   --display-size  Choose primary X11 output size (may freeze on large displays)
   --fit-workarea  Fit a 16:9 Zink window above desktop panels (X11/Xwayland)
   --native        Use native OpenGL instead of Mesa Zink (fullscreen may clip)
+  --proton        Use an isolated Windows game copy and installed Steam Proton
+  --proton-fullscreen  Start Proton in fullscreen at the configured width/height
+  --proton-windowed    Keep Proton windowed (default; restores from fullscreen)
+  --skip-winpatch  Do not extract ut2003-winpatch2225.exe into the private game copy
+  --cdkey-from-native  Apply your existing native System/cdkey to Proton only
+  --cdkey        Enter your CD key in a hidden terminal prompt for Proton
   --input-fix     Try experimental Escape-on-release binding (may resize on press)
   --no-input-fix  Leave Escape bindings alone (default)
   --sdl-compat    Try Steam's SDL12-compat (experimental)
@@ -26,7 +32,8 @@ Place this repository directly inside your UT2003 game directory; run from any d
   --openspy       Opt in to OpenSpy master server only (no renderer changes)
   --restore-openspy  Restore previous master-server settings only
   --restore-input | --restore-sdl | --restore-audio   Restore one component
-Environment: UT2003_OPENAL_SOFT, UT2003_ZINK_DRIVER, UT2003_LIBSTDCXX_SO,
+Environment: UT2003_PROTON (path to installed Proton), UT2003_OPENAL_SOFT,
+             UT2003_ZINK_DRIVER, UT2003_LIBSTDCXX_SO,
              UT2003_SDL_COMPAT_DIR can specify host 32-bit runtime paths.
 See README.md in this repository for limitations, examples and rollback.
 EOF
@@ -54,6 +61,17 @@ if [ "$#" -eq 0 ] || [ "${1:-}" = '--interactive' ]; then
     fi
     source "$patch/menu.sh"
     run_menu
+    exit 0
+fi
+
+if [ "${1:-}" = '--cdkey' ] || [ "${1:-}" = '--cdkey-from-native' ] || [ "${1:-}" = '--cdkey-stdin' ]; then
+    [ "$#" -eq 1 ] || { echo 'CD key actions must be used alone.' >&2; exit 2; }
+    case "$1" in
+        --cdkey) source_arg=--prompt ;;
+        --cdkey-from-native) source_arg=--from-native ;;
+        --cdkey-stdin) source_arg=--stdin ;;
+    esac
+    python3 "$patch/cdkey.py" "$game" "$source_arg"
     exit 0
 fi
 
@@ -109,9 +127,16 @@ check_only=false
 use_display_size=false
 use_fit_workarea=false
 use_undecorated=false
+skip_winpatch=false
+proton_fullscreen=false
+proton_video_option=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --native) renderer=native ;;
+        --proton) renderer=proton ;;
+        --proton-fullscreen) proton_fullscreen=true; proton_video_option=true ;;
+        --proton-windowed) proton_fullscreen=false; proton_video_option=true ;;
+        --skip-winpatch) skip_winpatch=true ;;
         --no-lutris) configure_args+=(--no-lutris) ;;
         --sdl-compat) use_sdl_compat=true ;;
         --original-sdl) use_sdl_compat=false ;;
@@ -184,6 +209,47 @@ width=${width:-1280}
 height=${height:-720}
 [[ $width =~ ^[0-9]+$ && $height =~ ^[0-9]+$ ]] || { echo 'Width and height must be positive integers.' >&2; exit 2; }
 (( width >= 320 && width <= 8192 && height >= 240 && height <= 8192 )) || { echo 'Unsupported width or height.' >&2; exit 2; }
+if [ "$renderer" != proton ] && { [ "$skip_winpatch" = true ] || [ "$proton_video_option" = true ]; }; then
+    echo '--skip-winpatch and --proton-fullscreen/--proton-windowed apply only to --proton.' >&2
+    exit 2
+fi
+if [ "$renderer" = proton ]; then
+    [ "$use_sdl_compat" = false ] && [ "$use_input_fix" = false ] && [ "$use_undecorated" = false ] || {
+        echo 'SDL compatibility, native Escape and undecorated options cannot be used with Proton.' >&2
+        exit 2
+    }
+    python3 "$patch/proton.py" "$game" --check
+    if [ "$skip_winpatch" = false ] && [ -f "$game/ut2003-winpatch2225.exe" ]; then
+        command -v 7z >/dev/null || { echo 'Install 7-Zip (7z) to apply the Windows 2225 patch, or pass --skip-winpatch.' >&2; exit 1; }
+    fi
+    if [ "$check_only" = true ]; then exit 0; fi
+    winpatch_args=()
+    if [ "$skip_winpatch" = false ] && [ -f "$game/ut2003-winpatch2225.exe" ]; then
+        echo "Extracting Windows 2225 patch into the PRIVATE game copy: $game/Backup/ProtonGame"
+        echo 'The original game is untouched; no Wine installer window or Z: drive is needed.'
+        winpatch_args+=(--install-winpatch)
+    fi
+    [ "$proton_fullscreen" = false ] || winpatch_args+=(--fullscreen)
+    python3 "$patch/proton.py" "$game" --patch "$patch" --width "$width" --height "$height" "${winpatch_args[@]}"
+    for file in launch-ut2003.sh ut2003-proton.py; do
+        if [ -e "$game/$file" ] && [ ! -e "$game/$file.pre-linuxpatch" ]; then
+            cp -p -- "$game/$file" "$game/$file.pre-linuxpatch"
+        fi
+    done
+    cp -p -- "$patch/launch-ut2003.sh" "$game/launch-ut2003.sh"
+    cp -p -- "$patch/proton.py" "$game/ut2003-proton.py"
+    chmod u+x "$game/launch-ut2003.sh"
+    python3 "$patch/configure.py" "$game" --renderer proton "${configure_args[@]}"
+    printf 'proton\n' > "$game/System/.ut2003-renderer"
+    printf '%s %s\n' "$width" "$height" > "$game/System/.ut2003-video"
+    if [ "$proton_fullscreen" = true ]; then
+        echo "Proton fullscreen selected at ${width}x${height}; test with the ONE-MINUTE menu option before normal launch."
+    else
+        echo "Proton windowed mode selected at ${width}x${height}."
+    fi
+    echo 'Native Zink files are unchanged; choose Zink in Configure Game to switch back.'
+    exit 0
+fi
 if [ "$use_undecorated" = true ]; then
     [ "$renderer" = zink ] || { echo '--undecorated is for windowed Zink only.' >&2; exit 2; }
     command -v xdotool >/dev/null 2>&1 && [ -f "$patch/window-hints.py" ] || {

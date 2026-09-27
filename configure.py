@@ -112,7 +112,7 @@ def restore_escape(path: Path, backup: Path) -> None:
         print(f"Restored Escape binding in {path}")
 
 
-def update_lutris(game: Path) -> None:
+def update_lutris(game: Path, renderer: str = "zink") -> None:
     config_dir = (
         Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
         / "lutris/games"
@@ -131,6 +131,15 @@ def update_lutris(game: Path) -> None:
             + str(game / "launch-ut2003.sh")
             + text[match.end(2) :]
         )
+        if renderer == "proton":
+            # Lutris may pass native-only -opengl; do not force that renderer
+            # for the Windows binary (which uses Direct3D through Proton).
+            updated = re.sub(
+                r"(?m)^(\s+args: )(['\"]?)-opengl( -nogamma)?\2\s*$",
+                lambda m: m.group(1) + ("-nogamma" if m.group(3) else "''"),
+                updated,
+                count=1,
+            )
         if updated != text:
             original = path.with_name(path.name + ".pre-linuxpatch")
             if not original.exists():
@@ -146,7 +155,9 @@ def main() -> None:
     parser.add_argument("--input-fix", action="store_true")
     parser.add_argument("--no-input-fix", action="store_true")
     parser.add_argument("--restore-input", action="store_true")
-    parser.add_argument("--renderer", choices=("zink", "native"), default="zink")
+    parser.add_argument(
+        "--renderer", choices=("zink", "native", "proton"), default="zink"
+    )
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     args = parser.parse_args()
@@ -161,6 +172,10 @@ def main() -> None:
             Path.home() / ".ut2003/System/User.ini", game / "Backup/User.ini.original"
         )
         return
+    if args.renderer == "proton":
+        if not args.no_lutris:
+            update_lutris(game, "proton")
+        return
     for path in (game / "System/UT2003.ini", game / "System/Default.ini"):
         update_ini(path, args.renderer, args.width, args.height)
     user_ini = Path.home() / ".ut2003/System/UT2003.ini"
@@ -171,7 +186,7 @@ def main() -> None:
             if path.exists():
                 update_escape(path, args.width, args.height)
     if not args.no_lutris:
-        update_lutris(game)
+        update_lutris(game, args.renderer)
 
 
 if __name__ == "__main__":

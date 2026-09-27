@@ -45,12 +45,14 @@ menu_settings() {
     echo '--- Renderer ---'
     echo '1) Mesa Zink: windowed OpenGL-over-Vulkan (requires 32-bit Vulkan)'
     echo '2) Native OpenGL: SDL fullscreen may clip the viewport'
+    echo '3) Proton: Windows executable + installed Steam Proton (private game copy)'
     echo '0) Back to main menu'
-    menu_choice 'Select renderer' '0 1 2' 1
+    menu_choice 'Select renderer' '0 1 2 3' 1
     renderer_choice=$REPLY
     case "$renderer_choice" in
         0) return ;;
         2) choices+=(--native) ;;
+        3) choices+=(--proton) ;;
     esac
     echo
     echo '--- Resolution ---'
@@ -100,13 +102,31 @@ menu_settings() {
             [ "$REPLY" = 0 ] && return
             [ "$REPLY" = n ] || choices+=(--undecorated)
         fi
-        menu_choice 'Try Escape-on-release? May resize or stall. y/n/0=back' 'y n 0' n
-        [ "$REPLY" = 0 ] && return
-        [ "$REPLY" = n ] || choices+=(--input-fix)
-        menu_choice 'Try Steam SDL12-compat? May stall. y/n/0=back' 'y n 0' n
-        [ "$REPLY" = 0 ] && return
-        [ "$REPLY" = n ] || choices+=(--sdl-compat)
-        echo 'Configuration edits game/user INIs, audio links and launcher. First-run backups remain outside this repository.'
+        if [ "$renderer_choice" = 3 ]; then
+            echo 'Proton copies the installed game into Backup/ProtonGame (can take several GB) and uses a separate Wine prefix.'
+            echo 'Your native Zink settings remain unchanged. Windows rendering/gameplay are experimental.'
+            echo 'Fullscreen can still clip or trap input on some displays; use the ONE-MINUTE test first.'
+            menu_choice 'Start Proton fullscreen at this resolution? y/n/0=back' 'y n 0' n
+            [ "$REPLY" = 0 ] && return
+            [ "$REPLY" = y ] && choices+=(--proton-fullscreen)
+            if [ -f "$game/ut2003-winpatch2225.exe" ]; then
+                echo 'Found the Windows 2225 self-extracting patch next to System/.'
+                echo "Apply it directly over the PRIVATE game copy: $game/Backup/ProtonGame"
+                echo 'Uses 7z; no Wine installer or Z: drive space check. Original game stays untouched.'
+                echo 'Files replaced in the private copy are backed up under Backup/ProtonWinpatch2225.original.'
+                menu_choice 'Apply the Windows 2225 patch to the private copy? y/n/0=back' 'y n 0' n
+                [ "$REPLY" = 0 ] && return
+                [ "$REPLY" = y ] || choices+=(--skip-winpatch)
+            fi
+        else
+            menu_choice 'Try Escape-on-release? May resize or stall. y/n/0=back' 'y n 0' n
+            [ "$REPLY" = 0 ] && return
+            [ "$REPLY" = n ] || choices+=(--input-fix)
+            menu_choice 'Try Steam SDL12-compat? May stall. y/n/0=back' 'y n 0' n
+            [ "$REPLY" = 0 ] && return
+            [ "$REPLY" = n ] || choices+=(--sdl-compat)
+            echo 'Configuration edits game/user INIs, audio links and launcher. First-run backups remain outside this repository.'
+        fi
         confirm_default=n
     else
         choices+=(--check)
@@ -120,6 +140,30 @@ menu_settings() {
     else
         echo 'No changes made. Returning to the main menu.'
     fi
+}
+
+menu_cdkey() {
+    local key status
+    echo 'Apply your own CD key to the PRIVATE Proton game and registry (not the native game).'
+    echo 'The Wine prefix and private cdkey will contain the key; keep Backup/ private.'
+    menu_choice '1) Reuse native System/cdkey  2) Enter another key (hidden)  0) Back' '0 1 2' 0
+    case "$REPLY" in
+        0) return ;;
+        1) menu_operation --cdkey-from-native ;;
+        2)
+            printf 'Enter your own UT2003 CD key (hidden): ' >&2
+            if ! IFS= read -rs key; then echo 'Input closed; no key applied.' >&2; return; fi
+            echo >&2
+            [ -n "$key" ] || { echo 'Empty key; no changes made.' >&2; return; }
+            if printf '%s\n' "$key" | bash "$patch/apply.sh" --cdkey-stdin; then
+                echo 'CD key applied. Returning to the main menu.'
+            else
+                status=$?
+                echo "CD key application failed (exit $status). Returning to the main menu." >&2
+            fi
+            unset key
+            ;;
+    esac
 }
 
 menu_test() {
@@ -156,6 +200,9 @@ run_menu() {
         echo '========================================================'
         echo "Game: $game"
         echo "Patch: $patch"
+        if [ -f "$game/System/.ut2003-renderer" ]; then
+            echo "Selected start mode: $(cat "$game/System/.ut2003-renderer")"
+        fi
         echo 'Fullscreen and Escape fixes are experimental; a GPU freeze is possible.'
         echo '  1) Configure game (confirmation required)'
         echo '  2) Check 32-bit dependencies (read-only)'
@@ -165,8 +212,9 @@ run_menu() {
         echo '  6) Test launch for ONE MINUTE, then return to this menu'
         echo '  7) Use OpenSpy server list (changes only master-server INIs)'
         echo '  8) Restore previous master-server settings'
+        echo '  9) Apply your CD key to Proton (private, optional)'
         echo '  0) Exit'
-        menu_choice 'Main menu' '0 1 2 3 4 5 6 7 8' 0
+        menu_choice 'Main menu' '0 1 2 3 4 5 6 7 8 9' 0
         case "$REPLY" in
             0) echo 'Exiting setup.'; return ;;
             1) menu_settings configure ;;
@@ -182,6 +230,7 @@ run_menu() {
                 if [ "$REPLY" = y ]; then menu_operation --openspy; else echo 'No changes made.'; fi
                 ;;
             8) menu_restore 'previous master-server settings' --restore-openspy ;;
+            9) menu_cdkey ;;
         esac
     done
 }

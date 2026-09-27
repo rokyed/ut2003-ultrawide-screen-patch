@@ -16,6 +16,14 @@ set +e
 timeout --signal=TERM --kill-after=3s "${seconds}s" "$game/launch-ut2003.sh" "$@"
 status=$?
 set -e
+# Proton can leave Wine children behind even when its launcher exits early.
+renderer=${UT2003_RENDERER:-}
+if [ -z "$renderer" ] && [ -f "$game/System/.ut2003-renderer" ]; then
+    renderer=$(cat "$game/System/.ut2003-renderer")
+fi
+if [ "$renderer" = proton ]; then
+    python3 "$patch/proton.py" "$game" --stop || true
+fi
 if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
     echo "Test time limit reached; game terminated (exit $status)." >&2
     exit "$status"

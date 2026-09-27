@@ -4,17 +4,6 @@ set -e
 root=$(cd -- "$(dirname -- "$0")" && pwd)
 cd "$root/System"
 
-if [ ! -s cdkey ]; then
-    if ! command -v zenity >/dev/null 2>&1; then
-        echo 'Missing System/cdkey; enter your own key there before launching.' >&2
-        exit 1
-    fi
-    key=$(zenity --entry --title='Unreal Tournament 2003' --text='Enter your UT2003 CD key') || exit 1
-    [ -n "$key" ] || exit 1
-    printf '%s\n' "$key" > cdkey
-    chmod 600 cdkey
-fi
-
 # Do not mix Lutris's old PulseAudio libraries with host OpenAL Soft.
 width=1280
 height=720
@@ -24,6 +13,20 @@ fi
 renderer=${UT2003_RENDERER:-zink}
 if [ -z "${UT2003_RENDERER:-}" ] && [ -f .ut2003-renderer ]; then
     renderer=$(< .ut2003-renderer)
+fi
+if [ "$renderer" = proton ]; then
+    [ -f "$root/ut2003-proton.py" ] || { echo 'Proton launcher missing; rerun apply.sh --proton.' >&2; exit 1; }
+    exec python3 "$root/ut2003-proton.py" "$root" --run -- "$@"
+fi
+if [ ! -s cdkey ]; then
+    if ! command -v zenity >/dev/null 2>&1; then
+        echo 'Missing System/cdkey; enter your own key there before launching.' >&2
+        exit 1
+    fi
+    key=$(zenity --entry --title='Unreal Tournament 2003' --text='Enter your UT2003 CD key') || exit 1
+    [ -n "$key" ] || exit 1
+    printf '%s\n' "$key" > cdkey
+    chmod 600 cdkey
 fi
 case "$renderer" in
     zink)

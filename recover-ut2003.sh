@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# From another TTY, stop only this installation's native UT2003 executable.
+# From another TTY, stop this installation's native or private Proton game.
 set -euo pipefail
 
 patch=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -24,5 +24,8 @@ for process in /proc/[0-9]*; do
     fi
 done
 if [ "$found" = 0 ]; then
-    echo "No UT2003 process from $game is running."
+    echo "No native UT2003 process from $game is running."
+fi
+if [ -f "$patch/proton.py" ] && command -v python3 >/dev/null 2>&1; then
+    python3 "$patch/proton.py" "$game" --stop
 fi
