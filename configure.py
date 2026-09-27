@@ -33,6 +33,7 @@ def update_ini(path: Path) -> None:
         "Engine.Engine",
         "SDLDrv.SDLClient",
         "OpenGLDrv.OpenGLRenderDevice",
+        "ALAudio.ALAudioSubsystem",
     ):
         if section not in sections:
             raise ValueError(f"{path}: missing [{section}]")
@@ -44,6 +45,7 @@ def update_ini(path: Path) -> None:
         },
         "SDLDrv.SDLClient": SDL,
         "OpenGLDrv.OpenGLRenderDevice": {"VARSize": "0"},
+        "ALAudio.ALAudioSubsystem": {"UseEAX": "False"},
     }
     # Process last sections first to avoid shifting earlier offsets. UT2003.ini
     # can contain two OpenGL sections; the second contains the VARSize setting.

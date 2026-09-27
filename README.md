@@ -5,7 +5,7 @@ This directory is intended to be its **own Git repository**. It contains only sc
 ## Requirements
 
 - An **existing** Unreal Tournament 2003 installation with the native Linux patch already installed (`System/ut2003-bin`, `System/UT2003.ini`, `System/Default.ini`). This repository does not supply copyrighted game files or the native executable. Install those separately from a source you are authorized to use.
-- Python 3. For fullscreen under Wayland: Gamescope. Lutris is optional; if used, its `Ubuntu-18.04-i686` runtime supplies the legacy 32-bit `libstdc++.so.5` needed by the game. Launching outside Lutris requires an equivalent 32-bit library.
+- Python 3, `file`, **32-bit OpenAL Soft** (`libopenal.so.1`), and a 32-bit `libstdc++.so.5`. Lutris's `Ubuntu-18.04-i686` runtime can supply the latter; an installed system copy works too. For fullscreen under Wayland: Gamescope. Lutris is optional.
 
 Place `LinuxPatch/` directly inside the UT2003 game directory and run:
 
@@ -13,8 +13,10 @@ Place `LinuxPatch/` directly inside the UT2003 game directory and run:
 ./LinuxPatch/apply.sh
 ```
 
-Or run `./LinuxPatch/apply.sh --no-lutris` to avoid changing a matching Lutris launcher. The script works with an existing Linux binary; it does **not** download or overwrite executables or game data. It installs `launch-ut2003.sh` in the game root and sets the game's and active user's INIs to OpenGL and 1280×720 fullscreen. On Wayland the launcher uses Gamescope to fit the game image to the screen; a wider monitor may show side bars. It preserves the current CD key, saves, maps, mods, other user settings, and any existing `padsp32` audio wrapper. Running it twice is safe.
+Or run `./LinuxPatch/apply.sh --no-lutris` to avoid changing a matching Lutris launcher. The script works with an existing Linux binary; it does **not** download or overwrite executables or game data. It installs `launch-ut2003.sh` in the game root and sets the game's and active user's INIs to OpenGL and 1280×720 fullscreen. On Wayland the launcher uses Gamescope to fit the game image to the screen; a wider monitor may show side bars.
 
-Before the first application, the script saves each INI and any existing launcher **outside `LinuxPatch`**, next to the original with `.pre-linuxpatch` appended. If Lutris needs to be changed, `configure.py` likewise saves a `.pre-linuxpatch` copy of its YAML in your Lutris config directory. Restore those files from their `.pre-linuxpatch` copies if you want to undo the settings. The Git repository never contains these private backups.
+For sound, the script links the game's `System/openal.so` and `System/libopenal.so` to the host's **32-bit OpenAL Soft**, which can output to PulseAudio/PipeWire or ALSA, instead of the bundled legacy OpenAL that reported no devices. It disables EAX and launches without the old `padsp32` preload. It makes a link to Lutris's 32-bit `libstdc++.so.5` in `System/` if needed, so host audio libraries are not mixed with Lutris's obsolete PulseAudio libraries. To choose a different 32-bit OpenAL Soft library, set `UT2003_OPENAL_SOFT` to its absolute path when applying. No libraries are bundled in Git. Run the script again to reapply the settings after changes to the installation.
 
-**Audio remains unresolved.** The legacy OpenAL backend reported no devices on the tested host; forcing a 32-bit PulseAudio preload caused a crash. This patch does not claim to fix sound or change the installed audio libraries. Graphical launching has to be checked in a desktop session.
+Before the first application, the script saves each INI, any original `System/openal.so` and `System/libopenal.so`, and any existing launcher **outside `LinuxPatch`**, next to the original with `.pre-linuxpatch` appended. If Lutris needs to be changed, `configure.py` likewise saves a `.pre-linuxpatch` copy of its YAML in your Lutris config directory. The Git repository never contains these private backups, CD keys, or game libraries.
+
+To undo **just the OpenAL library replacement**, run `./LinuxPatch/apply.sh --restore-audio`. Restore other settings from their `.pre-linuxpatch` copies if needed. A bounded desktop launch confirmed `ALAudio: subsystem initialized` with OpenAL Soft 1.24.2. The log also reports `Sound is too short for streaming: ..\\Music\\KR-UT2003-Menu.ogg`, so menu music may still be missing even if game sound effects work. Audio output cannot be heard or confirmed by this patch script; test it in-game. The bounded launch stops the game with a signal after the test period.

@@ -15,22 +15,10 @@ if [ ! -s cdkey ]; then
     chmod 600 cdkey
 fi
 
-# Lutris supplies this obsolete 32-bit C++ library to the native game. Gamescope
-# does not inherit its library path, so supply the same runtime to its child.
-runtime="$HOME/.local/share/lutris/runtime/Ubuntu-18.04-i686"
-if [ -f "$runtime/libstdc++.so.5" ]; then
-    library_path="$runtime${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-else
-    library_path="${LD_LIBRARY_PATH:-}"
-fi
-
-# Preserve an existing padsp32 wrapper if the installation has one. Do not
-# force a new audio preload: the host's 32-bit bridge crashed this build.
-command=(./ut2003-bin)
-if [ -x ../padsp32 ]; then
-    command=(../padsp32 "${command[@]}")
-fi
+# The old Lutris runtime contains obsolete PulseAudio libraries. With OpenAL
+# Soft, prefer the host's matching 32-bit audio libraries instead. apply.sh
+# places only the legacy libstdc++.so.5 needed by the game in System/.
 if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v gamescope >/dev/null 2>&1; then
-    exec gamescope -f -w 1280 -h 720 -S fit -- env LD_LIBRARY_PATH="$library_path" "${command[@]}" "$@"
+    exec gamescope -f -w 1280 -h 720 -S fit -- env LD_LIBRARY_PATH= LD_PRELOAD= ALSOFT_DRIVERS=pulse,pipewire,alsa ./ut2003-bin "$@"
 fi
-exec env LD_LIBRARY_PATH="$library_path" "${command[@]}" "$@"
+exec env LD_LIBRARY_PATH= LD_PRELOAD= ALSOFT_DRIVERS=pulse,pipewire,alsa ./ut2003-bin "$@"
