@@ -39,7 +39,7 @@ menu_restore() {
 }
 
 menu_settings() {
-    local action=$1 dimension min answer confirm_default
+    local action=$1 dimension min answer confirm_default renderer_choice resolution_choices
     local -a choices=()
     echo
     echo '--- Renderer ---'
@@ -47,7 +47,8 @@ menu_settings() {
     echo '2) Native OpenGL: SDL fullscreen may clip the viewport'
     echo '0) Back to main menu'
     menu_choice 'Select renderer' '0 1 2' 1
-    case "$REPLY" in
+    renderer_choice=$REPLY
+    case "$renderer_choice" in
         0) return ;;
         2) choices+=(--native) ;;
     esac
@@ -56,12 +57,18 @@ menu_settings() {
     echo '1) 1280x720: recommended first try'
     echo '2) Primary display size: may freeze on large displays'
     echo '3) Custom width and height'
+    resolution_choices='0 1 2 3'
+    if [ "$renderer_choice" = 1 ]; then
+        echo '4) Fit a 16:9 window above desktop panels (recommended for no decorations)'
+        resolution_choices='0 1 2 3 4'
+    fi
     echo '0) Back to main menu'
-    menu_choice 'Select resolution' '0 1 2 3' 1
+    menu_choice 'Select resolution' "$resolution_choices" 1
     case "$REPLY" in
         0) return ;;
         1) choices+=(--width 1280 --height 720) ;;
         2) choices+=(--display-size) ;;
+        4) choices+=(--fit-workarea) ;;
         3)
             for dimension in width height; do
                 if [ "$dimension" = width ]; then min=320; else min=240; fi
@@ -87,6 +94,12 @@ menu_settings() {
         menu_choice 'Update a matching Lutris entry? y/n/0=back' 'y n 0' y
         [ "$REPLY" = 0 ] && return
         [ "$REPLY" = y ] || choices+=(--no-lutris)
+        if [ "$renderer_choice" = 1 ]; then
+            echo 'No decorations removes the titlebar/frame only; it is NOT fullscreen and does not hide panels.'
+            menu_choice 'Remove Zink window decorations? y/n/0=back' 'y n 0' n
+            [ "$REPLY" = 0 ] && return
+            [ "$REPLY" = n ] || choices+=(--undecorated)
+        fi
         menu_choice 'Try Escape-on-release? May resize or stall. y/n/0=back' 'y n 0' n
         [ "$REPLY" = 0 ] && return
         [ "$REPLY" = n ] || choices+=(--input-fix)

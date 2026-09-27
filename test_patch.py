@@ -154,7 +154,7 @@ class PatchTest(unittest.TestCase):
         # checks or configuration edits should occur before that confirmation.
         response = subprocess.run(
             ["bash", str(patch_dir / "apply.sh"), "--interactive"],
-            input="1\n1\n3\n1280\n720\nn\nn\nn\nn\n0\n",
+            input="1\n1\n3\n1280\n720\nn\nn\nn\nn\nn\n0\n",
             check=False,
             capture_output=True,
             text=True,
@@ -173,6 +173,28 @@ class PatchTest(unittest.TestCase):
         )
         self.assertEqual(response.returncode, 2)
         self.assertIn("No terminal input available", response.stderr)
+
+    def test_undecorated_menu_option_is_opt_in(self):
+        patch_dir = self.game / "LinuxPatch"
+        patch_dir.mkdir()
+        for name in ("apply.sh", "menu.sh"):
+            shutil.copy2(Path(__file__).with_name(name), patch_dir / name)
+        (self.game / "System/ut2003-bin").write_text("placeholder")
+        (self.game / "System/ut2003-bin").chmod(0o700)
+        (self.game / "System/libSDL-1.2.so.0").write_text("placeholder")
+        response = subprocess.run(
+            ["bash", str(patch_dir / "apply.sh"), "--interactive"],
+            input="1\n1\n1\nn\ny\nn\nn\nn\n0\n",
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(response.returncode, 0, response.stderr)
+        self.assertIn(
+            "Selected: --width 1280 --height 720 --no-lutris --undecorated",
+            response.stdout,
+        )
+        self.assertFalse((self.game / "System/.ut2003-undecorated").exists())
 
     def test_one_minute_option_returns_to_main_menu(self):
         patch_dir = self.game / "LinuxPatch"
@@ -249,6 +271,168 @@ class PatchTest(unittest.TestCase):
         self.assertIn("Restored master-server settings", response.stdout)
         self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 3)
         self.assertEqual((self.game / "System/UT2003.ini").read_text(), TEMPLATE)
+
+    def test_undecorated_setting_can_be_applied_and_reversed(self):
+        patch_dir = self.game / "LinuxPatch"
+        patch_dir.mkdir()
+        for name in ("apply.sh", "configure.py", "launch-ut2003.sh", "window-hints.py"):
+            shutil.copy2(Path(__file__).with_name(name), patch_dir / name)
+        binary = self.game / "System/ut2003-bin"
+        binary.write_text("placeholder")
+        binary.chmod(0o700)
+        (self.game / "System/libSDL-1.2.so.0").write_text("placeholder")
+        (self.game / "System/libstdc++.so.5").write_text("placeholder")
+        lib = self.game / "lib32.so"
+        lib.write_text("placeholder")
+        tools = self.game / "tools"
+        tools.mkdir()
+        tool = tools / "file"
+        tool.write_text("#!/bin/sh\necho 'ELF 32-bit'\n")
+        tool.chmod(0o700)
+        for name in ("xdotool", "xprop", "xrandr"):
+            tool = tools / name
+            if name == "xprop":
+                tool.write_text(
+                    "#!/bin/sh\necho '_NET_WORKAREA(CARDINAL) = 0, 36, 2560, 998'\n"
+                )
+            elif name == "xrandr":
+                tool.write_text(
+                    "#!/bin/sh\necho 'DP-2 connected primary 2560x1080+0+0'\n"
+                )
+            else:
+                tool.write_text("#!/bin/sh\nexit 0\n")
+            tool.chmod(0o700)
+        env = dict(
+            os.environ,
+            HOME=str(self.home),
+            PATH=str(tools) + os.pathsep + os.environ["PATH"],
+            UT2003_ZINK_DRIVER=str(lib),
+            UT2003_OPENAL_SOFT=str(lib),
+        )
+        marker = self.game / "System/.ut2003-undecorated"
+        for option, expected in (("--undecorated", "1\n"), ("--decorated", "0\n")):
+            options = (
+                ["--fit-workarea", option] if option == "--undecorated" else [option]
+            )
+            response = subprocess.run(
+                ["bash", str(patch_dir / "apply.sh"), "--no-lutris", *options],
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(response.returncode, 0, response.stderr)
+            self.assertEqual(marker.read_text(), expected)
+            if option == "--undecorated":
+                self.assertEqual(
+                    (self.game / "System/.ut2003-video").read_text(), "1712 963\n"
+                )
+
+    def test_undecorated_launcher_requests_frame_removal_only(self):
+        launcher = self.game / "launch-ut2003.sh"
+        shutil.copy2(Path(__file__).with_name("launch-ut2003.sh"), launcher)
+        (self.game / "System/cdkey").write_text("test-key\n")
+        (self.game / "System/.ut2003-renderer").write_text("zink\n")
+        (self.game / "System/.ut2003-video").write_text("1280 720\n")
+        marker = self.game / "System/.ut2003-undecorated"
+        marker.write_text("1\n")
+        binary = self.game / "System/ut2003-bin"
+        binary.write_text("#!/bin/sh\nsleep 0.3\n")
+        binary.chmod(0o700)
+        tools = self.game / "tools"
+        tools.mkdir()
+        xdotool = tools / "xdotool"
+        xdotool.write_text("#!/bin/sh\necho 12345\n")
+        xdotool.chmod(0o700)
+        log = self.game / "window-hints-args"
+        helper = self.game / "ut2003-window-hints.py"
+        helper.write_text(
+            'import sys\nfrom pathlib import Path\nPath("'
+            + str(log)
+            + '").write_text(sys.argv[1])\n'
+        )
+        env = dict(
+            os.environ,
+            PATH=str(tools) + os.pathsep + os.environ["PATH"],
+            UT2003_BORDERLESS="0",
+        )
+        env.pop("UT2003_UNDECORATED", None)
+        response = subprocess.run(
+            ["bash", str(launcher)],
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(response.returncode, 0, response.stderr)
+        self.assertEqual(log.read_text(), "12345")
+        marker.write_text("0\n")
+        log.unlink()
+        response = subprocess.run(
+            ["bash", str(launcher)],
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(response.returncode, 0, response.stderr)
+        self.assertFalse(log.exists())
+
+    def test_bounded_undecorated_launch_kills_term_ignoring_child(self):
+        launcher = self.game / "launch-ut2003.sh"
+        shutil.copy2(Path(__file__).with_name("launch-ut2003.sh"), launcher)
+        patch_dir = self.game / "LinuxPatch"
+        patch_dir.mkdir()
+        shutil.copy2(
+            Path(__file__).with_name("test-launch.sh"), patch_dir / "test-launch.sh"
+        )
+        (self.game / "System/cdkey").write_text("test-key\n")
+        (self.game / "System/.ut2003-renderer").write_text("zink\n")
+        (self.game / "System/.ut2003-undecorated").write_text("1\n")
+        pidfile = self.game / "child.pid"
+        binary = self.game / "System/ut2003-bin"
+        binary.write_text(
+            '#!/bin/sh\ntrap "" TERM\necho "$$" > "'
+            + str(pidfile)
+            + '"\nexec sleep 30\n'
+        )
+        binary.chmod(0o700)
+        tools = self.game / "tools"
+        tools.mkdir()
+        xdotool = tools / "xdotool"
+        xdotool.write_text("#!/bin/sh\necho 12345\n")
+        xdotool.chmod(0o700)
+        (self.game / "ut2003-window-hints.py").write_text("# test helper\n")
+        env = dict(
+            os.environ,
+            PATH=str(tools) + os.pathsep + os.environ["PATH"],
+            UT2003_TEST_SECONDS="5",
+            UT2003_BORDERLESS="0",
+        )
+        env.pop("UT2003_UNDECORATED", None)
+        try:
+            response = subprocess.run(
+                ["bash", str(patch_dir / "test-launch.sh")],
+                env=env,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertIn(response.returncode, (124, 137), response.stderr)
+            self.assertTrue(pidfile.exists())
+            proc = Path("/proc") / pidfile.read_text().strip() / "status"
+            # A briefly unreaped zombie is no longer running or capturing input.
+            self.assertTrue(not proc.exists() or "State:\tZ" in proc.read_text())
+        finally:
+            if pidfile.exists():
+                try:
+                    os.kill(int(pidfile.read_text()), 9)
+                except ProcessLookupError:
+                    pass
 
     def test_recovery_only_stops_this_installation(self):
         patch_dir = self.game / "LinuxPatch"

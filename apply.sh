@@ -14,11 +14,14 @@ Place this repository directly inside your UT2003 game directory; run from any d
   --interactive   Show guided choices (also permits piped input)
   --check         Check installed game and 32-bit runtime dependencies; change nothing
   --display-size  Choose primary X11 output size (may freeze on large displays)
+  --fit-workarea  Fit a 16:9 Zink window above desktop panels (X11/Xwayland)
   --native        Use native OpenGL instead of Mesa Zink (fullscreen may clip)
   --input-fix     Try experimental Escape-on-release binding (may resize on press)
   --no-input-fix  Leave Escape bindings alone (default)
   --sdl-compat    Try Steam's SDL12-compat (experimental)
   --original-sdl  Use the bundled SDL (default)
+  --undecorated   Request no titlebar/frame for windowed Zink (not fullscreen)
+  --decorated     Keep normal window decorations (default)
   --no-lutris     Do not update a matching Lutris entry
   --openspy       Opt in to OpenSpy master server only (no renderer changes)
   --restore-openspy  Restore previous master-server settings only
@@ -104,16 +107,21 @@ use_sdl_compat=false
 use_input_fix=false
 check_only=false
 use_display_size=false
+use_fit_workarea=false
+use_undecorated=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --native) renderer=native ;;
         --no-lutris) configure_args+=(--no-lutris) ;;
         --sdl-compat) use_sdl_compat=true ;;
         --original-sdl) use_sdl_compat=false ;;
+        --undecorated) use_undecorated=true ;;
+        --decorated) use_undecorated=false ;;
         --no-input-fix) use_input_fix=false ;;
         --input-fix) use_input_fix=true ;;
         --check) check_only=true ;;
         --display-size) use_display_size=true ;;
+        --fit-workarea) use_fit_workarea=true ;;
         --width|--height)
             option=$1
             shift
@@ -125,6 +133,39 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 # Default to a smaller window. Full display resolution has stalled on this host.
+if [ "$use_fit_workarea" = true ]; then
+    [ "$renderer" = zink ] && [ "$use_display_size" = false ] && [ -z "$width" ] && [ -z "$height" ] || {
+        echo '--fit-workarea requires windowed Zink and cannot be combined with other size options.' >&2
+        exit 2
+    }
+    command -v xrandr >/dev/null 2>&1 && command -v xprop >/dev/null 2>&1 || {
+        echo '--fit-workarea requires xrandr and xprop on X11/Xwayland.' >&2
+        exit 1
+    }
+    display_mode=$(xrandr --current 2>/dev/null | awk '$2 == "connected" && $3 == "primary" {split($4, p, "+"); print p[1]; exit}') || true
+    work_area=$(xprop -root _NET_WORKAREA 2>/dev/null | sed -n 's/^[^=]*= *//p') || true
+    if [[ $display_mode =~ ^([0-9]+)x([0-9]+)$ ]]; then
+        primary_width=${BASH_REMATCH[1]}
+    else
+        echo 'No primary X11 output detected; choose --width and --height instead.' >&2
+        exit 1
+    fi
+    if [[ $work_area =~ ^[0-9]+,[[:space:]]*[0-9]+,[[:space:]]*([0-9]+),[[:space:]]*([0-9]+) ]]; then
+        work_width=${BASH_REMATCH[1]}
+        work_height=${BASH_REMATCH[2]}
+    else
+        echo 'No desktop work area detected; choose --width and --height instead.' >&2
+        exit 1
+    fi
+    (( work_width < primary_width )) && primary_width=$work_width
+    scale=$(( (work_height - 32) / 9 ))
+    width_scale=$(( (primary_width - 32) / 16 ))
+    (( width_scale < scale )) && scale=$width_scale
+    (( scale >= 27 )) || { echo 'Desktop work area is too small.' >&2; exit 1; }
+    width=$((scale * 16))
+    height=$((scale * 9))
+    echo "Fitting 16:9 window to work area: ${width}x${height} (available ${work_width}x${work_height})."
+fi
 if [ "$use_display_size" = true ]; then
     [ -z "$width" ] && [ -z "$height" ] || { echo '--display-size cannot be combined with --width/--height.' >&2; exit 2; }
     display_mode=
@@ -143,6 +184,13 @@ width=${width:-1280}
 height=${height:-720}
 [[ $width =~ ^[0-9]+$ && $height =~ ^[0-9]+$ ]] || { echo 'Width and height must be positive integers.' >&2; exit 2; }
 (( width >= 320 && width <= 8192 && height >= 240 && height <= 8192 )) || { echo 'Unsupported width or height.' >&2; exit 2; }
+if [ "$use_undecorated" = true ]; then
+    [ "$renderer" = zink ] || { echo '--undecorated is for windowed Zink only.' >&2; exit 2; }
+    command -v xdotool >/dev/null 2>&1 && [ -f "$patch/window-hints.py" ] || {
+        echo 'Undecorated mode requires xdotool and the included window-hints helper.' >&2
+        exit 1
+    }
+fi
 if [ "$renderer" = zink ]; then
     zink_available=false
     for driver in "${UT2003_ZINK_DRIVER:-}" /usr/lib/dri/zink_dri.so /usr/lib/i386-linux-gnu/dri/zink_dri.so /usr/lib32/dri/zink_dri.so; do
@@ -199,7 +247,7 @@ if [ "$check_only" = true ]; then
 fi
 
 # Preserve existing configuration outside this Git directory on the first run.
-for file in System/UT2003.ini System/Default.ini System/openal.so System/libopenal.so launch-ut2003.sh; do
+for file in System/UT2003.ini System/Default.ini System/openal.so System/libopenal.so launch-ut2003.sh ut2003-window-hints.py; do
     if { [ -f "$game/$file" ] || [ -L "$game/$file" ]; } && [ ! -e "$game/$file.pre-linuxpatch" ]; then
         cp -p -- "$game/$file" "$game/$file.pre-linuxpatch"
     fi
@@ -257,6 +305,7 @@ else
 fi
 
 cp -p -- "$patch/launch-ut2003.sh" "$game/launch-ut2003.sh"
+cp -p -- "$patch/window-hints.py" "$game/ut2003-window-hints.py"
 chmod u+x "$game/launch-ut2003.sh"
 if [ "$use_input_fix" = true ]; then
     configure_args+=(--input-fix)
@@ -275,10 +324,18 @@ fi
 python3 "$patch/configure.py" "$game" --renderer "$renderer" --width "$width" --height "$height" "${configure_args[@]}"
 printf '%s\n' "$renderer" > "$game/System/.ut2003-renderer"
 printf '%s %s\n' "$width" "$height" > "$game/System/.ut2003-video"
+if [ "$use_undecorated" = true ]; then
+    printf '1\n' > "$game/System/.ut2003-undecorated"
+else
+    printf '0\n' > "$game/System/.ut2003-undecorated"
+fi
 echo "Installed 32-bit OpenAL Soft from $openal; renderer: $renderer; game size: ${width}x${height}."
 echo 'Zink stays windowed by default. UT2003_BORDERLESS=1 is experimental and stalled on this host.'
 echo 'SDL12-compat is opt-in (--sdl-compat); it stalled at 2560x1080 on this host.'
 echo 'MenuViewport alone does not preserve the menu aspect ratio at ultrawide resolutions.'
+if [ "$use_undecorated" = true ]; then
+    echo 'Undecorated window requested; this removes the frame only, not fullscreen or compositor panels.'
+fi
 if [ "$use_input_fix" = true ]; then
     echo "Experimental Escape binding enabled. If it misbehaves, run '$patch/apply.sh' --restore-input."
 else
