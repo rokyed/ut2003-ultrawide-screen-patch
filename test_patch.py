@@ -94,7 +94,9 @@ class PatchTest(unittest.TestCase):
         )
         self.assertEqual(response.returncode, 0, response.stderr)
         self.assertIn("No changes made. Returning to the main menu.", response.stdout)
-        self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 2)
+        self.assertGreaterEqual(
+            response.stdout.count("Unreal Tournament 2003"), 2
+        )
         self.assertEqual((self.game / "System/UT2003.ini").read_text(), TEMPLATE)
         self.assertFalse((self.game / "System/.ut2003-video").exists())
         response = subprocess.run(
@@ -136,7 +138,9 @@ class PatchTest(unittest.TestCase):
             "One-minute time limit reached; returning to the main menu.",
             response.stdout,
         )
-        self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 2)
+        self.assertGreaterEqual(
+            response.stdout.count("Unreal Tournament 2003"), 2
+        )
         self.assertEqual((self.game / "seconds").read_text().strip(), "60")
 
     def test_failed_restore_returns_to_main_menu(self):
@@ -158,7 +162,9 @@ class PatchTest(unittest.TestCase):
         self.assertEqual(response.returncode, 0, response.stderr)
         self.assertIn("No original SDL backup", response.stderr)
         self.assertIn("Returning to the main menu", response.stderr)
-        self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 2)
+        self.assertGreaterEqual(
+            response.stdout.count("Unreal Tournament 2003"), 2
+        )
 
     def test_recovery_only_stops_this_installation(self):
         patch_dir = self.game / "LinuxPatch"

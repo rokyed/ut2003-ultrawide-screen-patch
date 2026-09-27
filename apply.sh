@@ -7,9 +7,10 @@ game=$(cd -- "$patch/.." && pwd)
 
 if [ "${1:-}" = '--help' ]; then
     cat <<'EOF'
-Usage: ./LinuxPatch/apply.sh [--interactive | --width PIXELS --height PIXELS [options]]
-No arguments starts a guided wizard in a terminal. Options run non-interactively.
-Run from any directory; LinuxPatch must sit directly inside your UT2003 directory.
+Unreal Tournament 2003 — Linux ultrawide setup
+Usage: ./apply.sh [--interactive | --width PIXELS --height PIXELS [options]]
+No arguments starts a guided menu in a terminal. Options run non-interactively.
+Place this repository directly inside your UT2003 game directory; run from any directory.
   --interactive   Show guided choices (also permits piped input)
   --check         Check installed game and 32-bit runtime dependencies; change nothing
   --display-size  Choose primary X11 output size (may freeze on large displays)
@@ -22,7 +23,7 @@ Run from any directory; LinuxPatch must sit directly inside your UT2003 director
   --restore-input | --restore-sdl | --restore-audio   Restore one component
 Environment: UT2003_OPENAL_SOFT, UT2003_ZINK_DRIVER, UT2003_LIBSTDCXX_SO,
              UT2003_SDL_COMPAT_DIR can specify host 32-bit runtime paths.
-See LinuxPatch/README.md for limitations, examples and rollback.
+See README.md in this repository for limitations, examples and rollback.
 EOF
     exit 0
 fi
@@ -38,7 +39,7 @@ command -v file >/dev/null || { echo 'The file utility is required to check 32-b
 # Interactive actions run in child invocations with explicit flags, so the menu
 # always survives a failed check/restore and can offer another action.
 if [ "$#" -eq 0 ] && [ ! -t 0 ]; then
-    echo 'No terminal input available. Run in a terminal or pass --check; see --help.' >&2
+    echo 'No terminal input available. Run apply.sh in a terminal or pass --check; see --help.' >&2
     exit 2
 fi
 if [ "$#" -eq 0 ] || [ "${1:-}" = '--interactive' ]; then
@@ -267,7 +268,7 @@ echo 'Zink stays windowed by default. UT2003_BORDERLESS=1 is experimental and st
 echo 'SDL12-compat is opt-in (--sdl-compat); it stalled at 2560x1080 on this host.'
 echo 'MenuViewport alone does not preserve the menu aspect ratio at ultrawide resolutions.'
 if [ "$use_input_fix" = true ]; then
-    echo 'Experimental Escape binding enabled. If it misbehaves, run ./LinuxPatch/apply.sh --restore-input.'
+    echo "Experimental Escape binding enabled. If it misbehaves, run '$patch/apply.sh' --restore-input."
 else
     echo 'Escape bindings unchanged; --input-fix enables the experimental release binding.'
 fi

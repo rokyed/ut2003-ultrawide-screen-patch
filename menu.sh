@@ -93,7 +93,7 @@ menu_settings() {
         menu_choice 'Try Steam SDL12-compat? May stall. y/n/0=back' 'y n 0' n
         [ "$REPLY" = 0 ] && return
         [ "$REPLY" = n ] || choices+=(--sdl-compat)
-        echo 'Configuration edits game/user INIs, audio links and launcher. First-run backups remain outside LinuxPatch.'
+        echo 'Configuration edits game/user INIs, audio links and launcher. First-run backups remain outside this repository.'
         confirm_default=n
     else
         choices+=(--check)
@@ -139,9 +139,10 @@ run_menu() {
     while :; do
         echo
         echo '========================================================'
-        echo '   Unreal Tournament 2003  |  Linux patch setup'
+        echo '   Unreal Tournament 2003  |  Linux setup'
         echo '========================================================'
         echo "Game: $game"
+        echo "Patch: $patch"
         echo 'Fullscreen and Escape fixes are experimental; a GPU freeze is possible.'
         echo '  1) Configure game (confirmation required)'
         echo '  2) Check 32-bit dependencies (read-only)'
