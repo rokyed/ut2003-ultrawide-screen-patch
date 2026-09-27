@@ -27,6 +27,29 @@ if [ "${1:-}" = '--restore-audio' ]; then
     exit 0
 fi
 
+renderer=zink
+configure_args=()
+for argument in "$@"; do
+    case "$argument" in
+        --native) renderer=native ;;
+        --no-lutris) configure_args+=(--no-lutris) ;;
+        *) echo "Unknown option: $argument (use --native, --no-lutris, or --restore-audio)" >&2; exit 2 ;;
+    esac
+done
+if [ "$renderer" = zink ]; then
+    zink_available=false
+    for driver in /usr/lib/dri/zink_dri.so /usr/lib/i386-linux-gnu/dri/zink_dri.so /usr/lib32/dri/zink_dri.so; do
+        if [ -f "$driver" ] && file -Lb -- "$driver" | grep -q 'ELF 32-bit'; then
+            zink_available=true
+            break
+        fi
+    done
+    if [ "$zink_available" != true ]; then
+        echo 'The 32-bit Mesa Zink OpenGL driver is required; use --native for NVIDIA OpenGL instead.' >&2
+        exit 1
+    fi
+fi
+
 # Use the host's 32-bit OpenAL Soft, not the bundled OSS-era OpenAL backend.
 openal="${UT2003_OPENAL_SOFT:-}"
 if [ -z "$openal" ]; then
@@ -71,6 +94,7 @@ ln -s -- "$openal" "$game/System/openal.so"
 ln -s -- openal.so "$game/System/libopenal.so"
 cp -p -- "$patch/launch-ut2003.sh" "$game/launch-ut2003.sh"
 chmod u+x "$game/launch-ut2003.sh"
-python3 "$patch/configure.py" "$game" "$@"
-echo "Installed 32-bit OpenAL Soft from $openal and Linux video settings."
-echo 'Launch via launch-ut2003.sh or its Lutris entry; use --restore-audio to undo the library swap.'
+python3 "$patch/configure.py" "$game" --renderer "$renderer" "${configure_args[@]}"
+printf '%s\n' "$renderer" > "$game/System/.ut2003-renderer"
+echo "Installed 32-bit OpenAL Soft from $openal; renderer: $renderer."
+echo 'Launch via launch-ut2003.sh or Lutris; use --native to restore NVIDIA OpenGL/Gamescope.'

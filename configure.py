@@ -19,7 +19,7 @@ SDL = {
 }
 
 
-def update_ini(path: Path) -> None:
+def update_ini(path: Path, renderer: str = "zink") -> None:
     text = path.read_text()
     lines = text.splitlines(keepends=True)
     sections = {}
@@ -43,7 +43,11 @@ def update_ini(path: Path) -> None:
             "RenderDevice": "OpenGLDrv.OpenGLRenderDevice",
             "ViewportManager": "SDLDrv.SDLClient",
         },
-        "SDLDrv.SDLClient": SDL,
+        "SDLDrv.SDLClient": {
+            **SDL,
+            "StartupFullscreen": "False" if renderer == "zink" else "True",
+            "UseFullscreen": "False" if renderer == "zink" else "True",
+        },
         "OpenGLDrv.OpenGLRenderDevice": {"VARSize": "0"},
         "ALAudio.ALAudioSubsystem": {"UseEAX": "False"},
     }
@@ -100,13 +104,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("game", type=Path)
     parser.add_argument("--no-lutris", action="store_true")
+    parser.add_argument("--renderer", choices=("zink", "native"), default="zink")
     args = parser.parse_args()
     game = args.game.resolve()
     for path in (game / "System/UT2003.ini", game / "System/Default.ini"):
-        update_ini(path)
+        update_ini(path, args.renderer)
     user_ini = Path.home() / ".ut2003/System/UT2003.ini"
     if user_ini.exists():
-        update_ini(user_ini)
+        update_ini(user_ini, args.renderer)
     if not args.no_lutris:
         update_lutris(game)
 
