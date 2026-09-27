@@ -25,19 +25,18 @@ Put this **entire** `LinuxPatch/` directory directly under the game directory, a
 ```sh
 cd /path/to/UT2003
 ./LinuxPatch/apply.sh
-# After applying, make the first launch time-limited:
-./LinuxPatch/test-launch.sh
-# Only if the test succeeds, use ./launch-ut2003.sh normally.
+# Choose 1 to configure, then 6 for the ONE-MINUTE test run.
+# Choose 0 when you are ready to leave the setup menu.
 ```
 
-The wizard explains known limitations, offers a **read-only dependency check**, a recommended 1280×720 starting size or custom dimensions, renderer choice, optional Lutris integration, and experimental input/SDL options. It shows a summary before proceeding. **Configure and restore actions default to No at the confirmation prompt; pressing Enter will not apply changes.** A closed input stream cancels the operation. Restoration of individual components is also available in the wizard. If launched without arguments from a script without terminal input, it exits rather than silently modifying files. Use `--help` for all flags; to automate, supply flags explicitly, for example:
+The numbered terminal menu offers configuration, **read-only dependency checks**, individual restores, and a clearly marked **one-minute test launch** (option 6). After each action, including a completed or timed-out test run, it returns to the main menu; `0` exits or backs out of configuration. The one-minute test explicitly warns that the UI or controls may be lost, and gives the emergency Ctrl+Alt+F3 recovery command. Installation offers a recommended 1280×720 size or custom dimensions, renderer choice, optional Lutris integration, and experimental input/SDL options. It shows a summary before proceeding. **Configure, restore, and test launch default to No at the confirmation prompt; pressing Enter will not apply changes or launch the game.** A closed input stream exits the menu. If launched without arguments from a script without terminal input, it exits rather than silently modifying files. Use `--help` for all flags; to automate, supply flags explicitly, for example:
 
 ```sh
 ./LinuxPatch/apply.sh --check
 ./LinuxPatch/apply.sh --width 1280 --height 720 --no-lutris
 ```
 
-`--interactive` starts the wizard even if standard input is piped, primarily for testing. Flags otherwise bypass the wizard and make changes **without a confirmation prompt**; use `--check` first in automation.
+`--interactive` starts the menu even if standard input is piped, primarily for testing. Flags otherwise bypass the menu and make changes **without a confirmation prompt**; use `--check` first in automation. Option 6 invokes `test-launch.sh` with a fixed **60-second** limit; it never launches an unrestricted game from the menu. You can also invoke `./LinuxPatch/test-launch.sh` directly (with its optional `UT2003_TEST_SECONDS` override).
 
 Use `--width 2560 --height 1080` (or any width 320–8192 and height 240–8192) for a custom window. Without dimensions, `apply.sh` now chooses the safer 1280×720; `--display-size` explicitly selects the primary `xrandr` output size (a large one may freeze). **Start with a modest window size** if a large one stalls. The launcher starts the game from `System/` so its relative asset paths work. Pass game arguments after the launcher name if needed. The script can be rerun; it saves originals on the first application, not on each subsequent run. Use `--no-lutris` to avoid changing a matching Lutris entry. For Lutris, select `<game directory>/launch-ut2003.sh` as the executable yourself if its existing entry was not updated (only entries with an absolute executable path to **this installation** are changed).
 

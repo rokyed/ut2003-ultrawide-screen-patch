@@ -35,7 +35,8 @@ fi
 command -v python3 >/dev/null || { echo 'Python 3 is required to edit INI files.' >&2; exit 1; }
 command -v file >/dev/null || { echo 'The file utility is required to check 32-bit libraries.' >&2; exit 1; }
 
-# No-argument invocations are guided only when a terminal is attached.
+# Interactive actions run in child invocations with explicit flags, so the menu
+# always survives a failed check/restore and can offer another action.
 if [ "$#" -eq 0 ] && [ ! -t 0 ]; then
     echo 'No terminal input available. Run in a terminal or pass --check; see --help.' >&2
     exit 2
@@ -45,78 +46,9 @@ if [ "$#" -eq 0 ] || [ "${1:-}" = '--interactive' ]; then
         echo '--interactive cannot be combined with other options.' >&2
         exit 2
     fi
-    ask_choice() {
-        local prompt=$1 allowed=$2 default=$3 answer
-        while :; do
-            printf '%s [%s]: ' "$prompt" "$default" >&2
-            if ! IFS= read -r answer; then echo 'Cancelled (input closed).' >&2; exit 1; fi
-            answer=${answer:-$default}
-            case " $allowed " in
-                *" $answer "*) REPLY=$answer; return ;;
-                *) echo "Choose one of: $allowed" >&2 ;;
-            esac
-        done
-    }
-    echo 'UT2003 Linux patch — game files are not included.'
-    echo 'Known limits: fullscreen may clip or stall; 4:3 menus and Escape are not fully fixed.'
-    echo "Game directory: $game"
-    ask_choice 'Action: 1) Configure  2) Check dependencies  3) Restore Escape  4) Restore SDL  5) Restore audio  0) Cancel' '0 1 2 3 4 5' 1
-    case "$REPLY" in
-        0) echo 'Cancelled; no changes made.'; exit 0 ;;
-        3|4|5)
-            case "$REPLY" in
-                3) target='Escape binding'; set -- --restore-input ;;
-                4) target='bundled SDL'; set -- --restore-sdl ;;
-                5) target='original audio'; set -- --restore-audio ;;
-            esac
-            echo "Restore $target from this installation's backup? Other settings remain unchanged."
-            ask_choice 'Proceed? y/n' 'y n' n
-            [ "$REPLY" = y ] || { echo 'Cancelled; no changes made.'; exit 0; }
-            ;;
-        1|2)
-            action=$REPLY
-            ask_choice 'Renderer: 1) Zink (windowed, needs 32-bit Vulkan)  2) Native OpenGL (fullscreen may clip)' '1 2' 1
-            wizard_args=()
-            [ "$REPLY" = 1 ] || wizard_args+=(--native)
-            ask_choice 'Size: 1) 1280x720 (recommended)  2) Primary display  3) Custom' '1 2 3' 1
-            case "$REPLY" in
-                1) wizard_args+=(--width 1280 --height 720) ;;
-                2) wizard_args+=(--display-size) ;;
-                3)
-                    for dimension in width height; do
-                        if [ "$dimension" = width ]; then min=320; else min=240; fi
-                        while :; do
-                            printf '%s (pixels, %s–8192): ' "$dimension" "$min" >&2
-                            if ! IFS= read -r answer; then echo 'Cancelled (input closed).' >&2; exit 1; fi
-                            if [[ $answer =~ ^[0-9]{1,4}$ ]] && (( 10#$answer >= min && 10#$answer <= 8192 )); then
-                                wizard_args+=("--$dimension" "$((10#$answer))")
-                                break
-                            fi
-                            echo 'Enter a valid positive pixel count.' >&2
-                        done
-                    done
-                    ;;
-            esac
-            if [ "$action" = 1 ]; then
-                ask_choice 'Update a Lutris entry pointing to this game? y/n' 'y n' y
-                [ "$REPLY" = y ] || wizard_args+=(--no-lutris)
-                ask_choice 'Try experimental Escape binding? May resize or stall. y/n' 'y n' n
-                [ "$REPLY" = n ] || wizard_args+=(--input-fix)
-                ask_choice 'Try experimental Steam SDL12-compat? May stall. y/n' 'y n' n
-                [ "$REPLY" = n ] || wizard_args+=(--sdl-compat)
-                echo 'This will edit game/user INIs, link host audio and install a launcher; first-run backups stay outside LinuxPatch.'
-                confirm_default=n
-            else
-                wizard_args+=(--check)
-                echo 'This checks available dependencies without making changes.'
-                confirm_default=y
-            fi
-            echo 'Selected options:' "${wizard_args[*]:-(defaults)}"
-            ask_choice 'Proceed? y/n' 'y n' "$confirm_default"
-            [ "$REPLY" = y ] || { echo 'Cancelled; no changes made.'; exit 0; }
-            set -- "${wizard_args[@]}"
-            ;;
-    esac
+    source "$patch/menu.sh"
+    run_menu
+    exit 0
 fi
 
 if [ "${1:-}" = '--restore-sdl' ]; then

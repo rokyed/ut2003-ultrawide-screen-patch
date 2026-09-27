@@ -79,6 +79,7 @@ class PatchTest(unittest.TestCase):
         patch_dir = self.game / "LinuxPatch"
         patch_dir.mkdir()
         shutil.copy2(Path(__file__).with_name("apply.sh"), patch_dir / "apply.sh")
+        shutil.copy2(Path(__file__).with_name("menu.sh"), patch_dir / "menu.sh")
         (self.game / "System/ut2003-bin").write_text("placeholder")
         (self.game / "System/ut2003-bin").chmod(0o700)
         (self.game / "System/libSDL-1.2.so.0").write_text("placeholder")
@@ -86,13 +87,14 @@ class PatchTest(unittest.TestCase):
         # checks or configuration edits should occur before that confirmation.
         response = subprocess.run(
             ["bash", str(patch_dir / "apply.sh"), "--interactive"],
-            input="1\n1\n3\n1280\n720\nn\nn\nn\nn\n",
+            input="1\n1\n3\n1280\n720\nn\nn\nn\nn\n0\n",
             check=False,
             capture_output=True,
             text=True,
         )
         self.assertEqual(response.returncode, 0, response.stderr)
-        self.assertIn("Cancelled; no changes made.", response.stdout)
+        self.assertIn("No changes made. Returning to the main menu.", response.stdout)
+        self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 2)
         self.assertEqual((self.game / "System/UT2003.ini").read_text(), TEMPLATE)
         self.assertFalse((self.game / "System/.ut2003-video").exists())
         response = subprocess.run(
@@ -104,6 +106,59 @@ class PatchTest(unittest.TestCase):
         )
         self.assertEqual(response.returncode, 2)
         self.assertIn("No terminal input available", response.stderr)
+
+    def test_one_minute_option_returns_to_main_menu(self):
+        patch_dir = self.game / "LinuxPatch"
+        patch_dir.mkdir()
+        shutil.copy2(Path(__file__).with_name("apply.sh"), patch_dir / "apply.sh")
+        shutil.copy2(Path(__file__).with_name("menu.sh"), patch_dir / "menu.sh")
+        (self.game / "System/ut2003-bin").write_text("placeholder")
+        (self.game / "System/ut2003-bin").chmod(0o700)
+        (self.game / "System/libSDL-1.2.so.0").write_text("placeholder")
+        trial = patch_dir / "test-launch.sh"
+        trial.write_text(
+            '#!/bin/sh\nprintf "%s\\n" "$UT2003_TEST_SECONDS" > "'
+            + str(self.game / "seconds")
+            + '"\nexit 124\n'
+        )
+        response = subprocess.run(
+            ["bash", str(patch_dir / "apply.sh"), "--interactive"],
+            input="6\ny\n0\n",
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(response.returncode, 0, response.stderr)
+        self.assertIn("ONE-MINUTE TEST RUN", response.stdout)
+        self.assertIn("wait one minute", response.stdout)
+        self.assertIn(
+            "One-minute time limit reached; returning to the main menu.",
+            response.stdout,
+        )
+        self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 2)
+        self.assertEqual((self.game / "seconds").read_text().strip(), "60")
+
+    def test_failed_restore_returns_to_main_menu(self):
+        patch_dir = self.game / "LinuxPatch"
+        patch_dir.mkdir()
+        shutil.copy2(Path(__file__).with_name("apply.sh"), patch_dir / "apply.sh")
+        shutil.copy2(Path(__file__).with_name("menu.sh"), patch_dir / "menu.sh")
+        (self.game / "System/ut2003-bin").write_text("placeholder")
+        (self.game / "System/ut2003-bin").chmod(0o700)
+        (self.game / "System/libSDL-1.2.so.0").write_text("placeholder")
+        response = subprocess.run(
+            ["bash", str(patch_dir / "apply.sh"), "--interactive"],
+            input="4\ny\n0\n",
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        self.assertEqual(response.returncode, 0, response.stderr)
+        self.assertIn("No original SDL backup", response.stderr)
+        self.assertIn("Returning to the main menu", response.stderr)
+        self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 2)
 
     def test_recovery_only_stops_this_installation(self):
         patch_dir = self.game / "LinuxPatch"
