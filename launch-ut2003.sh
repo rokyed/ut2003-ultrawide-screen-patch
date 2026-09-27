@@ -32,6 +32,9 @@ case "$renderer" in
         game_env=(env WAYLAND_DISPLAY= SDL_VIDEODRIVER=x11 LD_LIBRARY_PATH= LD_PRELOAD=
             ALSOFT_DRIVERS=pulse,pipewire,alsa __GLX_VENDOR_LIBRARY_NAME=mesa
             MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink)
+        if [ -n "${UT2003_ZINK_DRIVER:-}" ]; then
+            game_env+=("LIBGL_DRIVERS_PATH=$(dirname -- "$UT2003_ZINK_DRIVER")")
+        fi
         if [ "${UT2003_BORDERLESS:-0}" = 1 ] && command -v xrandr >/dev/null 2>&1 \
             && command -v wmctrl >/dev/null 2>&1 && command -v xdotool >/dev/null 2>&1; then
             display_mode=$(xrandr --current 2>/dev/null | awk '$2 == "connected" && $3 == "primary" {split($4, p, "+"); print p[1]; exit}')

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Adjust UT2003's Linux renderer settings without discarding other preferences."""
 
 import argparse
@@ -71,7 +70,7 @@ def update_ini(
         )
         block = lines[start + 1 : end]
         for key, value in keys.items():
-            match = re.compile(rf"^{re.escape(key)}\s*=", re.I)
+            match = re.compile(rf"^{re.escape(key)}\s*=", re.IGNORECASE)
             positions = [i for i, line in enumerate(block) if match.match(line)]
             if positions:
                 for i in positions:
@@ -88,8 +87,9 @@ def update_ini(
 def update_escape(path: Path, width: int, height: int) -> None:
     text = path.read_text()
     replacement = f"Escape=SetRes {width}x{height}w|OnRelease ShowMenu"
-    # The no-op-sized SetRes is the key-down action: this engine only dispatches
-    # OnRelease when a command also ran on key-down (as its ScoreToggle alias does).
+    # SetRes runs on key-down and may resize even at the configured dimensions.
+    # This experimental binding is opt-in; the engine needs a key-down command
+    # before it dispatches OnRelease (as with its ScoreToggle alias).
     pattern = r"(?m)^Escape=(?:ShowMenu|SetRes [0-9]+x[0-9]+w\|OnRelease ShowMenu)$"
     updated = re.sub(pattern, replacement, text, count=1)
     if updated != text:
@@ -117,15 +117,19 @@ def update_lutris(game: Path) -> None:
         Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
         / "lutris/games"
     )
+    executables = {str(game / "System/ut2003-bin"), str(game / "launch-ut2003.sh")}
     for path in config_dir.glob("unreal-tournament-2003-*.yml"):
         text = path.read_text()
-        pattern = re.compile(
-            r"(?m)^(  exe: )(.*(?:/System/ut2003-bin|/launch-ut2003\.sh))\s*$"
-        )
-        if not pattern.search(text) or "/UT2003/" not in text:
+        # Only alter an absolute executable path belonging to this installation.
+        # Relative paths and entries for other installations need manual setup.
+        pattern = re.compile(r"(?m)^(\s+exe: )([^\n]+)$")
+        match = pattern.search(text)
+        if match is None or match.group(2).strip().strip("\"'") not in executables:
             continue
-        updated = pattern.sub(
-            lambda match: match.group(1) + str(game / "launch-ut2003.sh"), text, count=1
+        updated = (
+            text[: match.start(2)]
+            + str(game / "launch-ut2003.sh")
+            + text[match.end(2) :]
         )
         if updated != text:
             original = path.with_name(path.name + ".pre-linuxpatch")
@@ -139,6 +143,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("game", type=Path)
     parser.add_argument("--no-lutris", action="store_true")
+    parser.add_argument("--input-fix", action="store_true")
     parser.add_argument("--no-input-fix", action="store_true")
     parser.add_argument("--restore-input", action="store_true")
     parser.add_argument("--renderer", choices=("zink", "native"), default="zink")
@@ -161,7 +166,7 @@ def main() -> None:
     user_ini = Path.home() / ".ut2003/System/UT2003.ini"
     if user_ini.exists():
         update_ini(user_ini, args.renderer, args.width, args.height)
-    if not args.no_input_fix:
+    if args.input_fix and not args.no_input_fix:
         for path in (game / "System/User.ini", Path.home() / ".ut2003/System/User.ini"):
             if path.exists():
                 update_escape(path, args.width, args.height)
