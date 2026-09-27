@@ -150,8 +150,10 @@ run_menu() {
         echo '  4) Restore bundled SDL 1.2'
         echo '  5) Restore original audio'
         echo '  6) Test launch for ONE MINUTE, then return to this menu'
+        echo '  7) Use OpenSpy server list (changes only master-server INIs)'
+        echo '  8) Restore previous master-server settings'
         echo '  0) Exit'
-        menu_choice 'Main menu' '0 1 2 3 4 5 6' 0
+        menu_choice 'Main menu' '0 1 2 3 4 5 6 7 8' 0
         case "$REPLY" in
             0) echo 'Exiting setup.'; return ;;
             1) menu_settings configure ;;
@@ -160,6 +162,13 @@ run_menu() {
             4) menu_restore 'bundled SDL' --restore-sdl ;;
             5) menu_restore 'original audio' --restore-audio ;;
             6) menu_test ;;
+            7)
+                echo 'OpenSpy is an external service. The game will contact utmaster.openspy.net:28902 for server listings (and server advertising).'
+                echo 'Only master-server INI keys change; game files and graphics/audio settings stay as they are.'
+                menu_choice 'Enable OpenSpy? y/n' 'y n' n
+                if [ "$REPLY" = y ]; then menu_operation --openspy; else echo 'No changes made.'; fi
+                ;;
+            8) menu_restore 'previous master-server settings' --restore-openspy ;;
         esac
     done
 }

@@ -20,6 +20,8 @@ Place this repository directly inside your UT2003 game directory; run from any d
   --sdl-compat    Try Steam's SDL12-compat (experimental)
   --original-sdl  Use the bundled SDL (default)
   --no-lutris     Do not update a matching Lutris entry
+  --openspy       Opt in to OpenSpy master server only (no renderer changes)
+  --restore-openspy  Restore previous master-server settings only
   --restore-input | --restore-sdl | --restore-audio   Restore one component
 Environment: UT2003_OPENAL_SOFT, UT2003_ZINK_DRIVER, UT2003_LIBSTDCXX_SO,
              UT2003_SDL_COMPAT_DIR can specify host 32-bit runtime paths.
@@ -49,6 +51,16 @@ if [ "$#" -eq 0 ] || [ "${1:-}" = '--interactive' ]; then
     fi
     source "$patch/menu.sh"
     run_menu
+    exit 0
+fi
+
+if [ "${1:-}" = '--openspy' ] || [ "${1:-}" = '--restore-openspy' ]; then
+    [ "$#" -eq 1 ] || { echo 'OpenSpy options must be used alone.' >&2; exit 2; }
+    if [ "$1" = --restore-openspy ]; then
+        python3 "$patch/openspy.py" "$game" --restore
+    else
+        python3 "$patch/openspy.py" "$game"
+    fi
     exit 0
 fi
 

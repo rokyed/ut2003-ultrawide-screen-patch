@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("configure.py")
+OPENSPY = Path(__file__).with_name("openspy.py")
 TEMPLATE = """[Engine.Engine]
 RenderDevice=old
 ViewportManager=old
@@ -18,6 +19,15 @@ WindowedViewportX=640
 VARSize=256
 [ALAudio.ALAudioSubsystem]
 UseEAX=True
+[IpDrv.MasterServerLink]
+LANPort=11777
+CurrentMasterServer=2
+MasterServerPort[0]=28902
+MasterServerAddress[0]=ut2003master1.epicgames.com
+MasterServerPort[1]=28902
+MasterServerAddress[1]=ut2003master2.epicgames.com
+MasterServerPort[2]=0
+MasterServerAddress[2]=
 """
 
 
@@ -53,6 +63,63 @@ class PatchTest(unittest.TestCase):
             check=True,
             capture_output=True,
             text=True,
+        )
+
+    def run_openspy(self, *args):
+        env = dict(os.environ, HOME=str(self.home))
+        return subprocess.run(
+            [sys.executable, str(OPENSPY), str(self.game), *args],
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_openspy_apply_restore_preserves_other_settings(self):
+        self.run_openspy()
+        for path in (
+            self.game / "System/UT2003.ini",
+            self.game / "System/Default.ini",
+            self.home / ".ut2003/System/UT2003.ini",
+        ):
+            text = path.read_text()
+            self.assertIn("CurrentMasterServer=0\n", text)
+            self.assertIn("MasterServerAddress[0]=utmaster.openspy.net\n", text)
+            self.assertIn("MasterServerPort[0]=28902\n", text)
+            self.assertIn("MasterServerPort[1]=0\n", text)
+            self.assertIn("MasterServerAddress[1]=\n", text)
+            self.assertIn("LANPort=11777\n", text)
+        backup = self.game / "Backup/OpenSpy-System-UT2003.ini.original"
+        self.assertEqual(backup.read_text(), TEMPLATE)
+        self.run_openspy()
+        self.assertEqual(backup.read_text(), TEMPLATE)
+        path = self.game / "System/UT2003.ini"
+        path.write_text(path.read_text().replace("LANPort=11777", "LANPort=12345"))
+        self.run_openspy("--restore")
+        self.assertIn("LANPort=12345\n", path.read_text())
+        self.assertIn("CurrentMasterServer=2\n", path.read_text())
+        self.assertIn(
+            "MasterServerAddress[0]=ut2003master1.epicgames.com\n", path.read_text()
+        )
+        self.assertEqual((self.game / "System/Default.ini").read_text(), TEMPLATE)
+        self.assertEqual(
+            (self.home / ".ut2003/System/UT2003.ini").read_text(), TEMPLATE
+        )
+
+    def test_openspy_rejects_missing_section_before_any_edits(self):
+        (self.home / ".ut2003/System/UT2003.ini").write_text("[Other]\nValue=keep\n")
+        response = subprocess.run(
+            [sys.executable, str(OPENSPY), str(self.game)],
+            env=dict(os.environ, HOME=str(self.home)),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(response.returncode, 1)
+        self.assertIn("expected exactly one [IpDrv.MasterServerLink]", response.stderr)
+        self.assertEqual((self.game / "System/UT2003.ini").read_text(), TEMPLATE)
+        self.assertFalse(
+            (self.game / "Backup/OpenSpy-System-UT2003.ini.original").exists()
         )
 
     def test_defaults_are_idempotent_and_leave_input_alone(self):
@@ -94,9 +161,7 @@ class PatchTest(unittest.TestCase):
         )
         self.assertEqual(response.returncode, 0, response.stderr)
         self.assertIn("No changes made. Returning to the main menu.", response.stdout)
-        self.assertGreaterEqual(
-            response.stdout.count("Unreal Tournament 2003"), 2
-        )
+        self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 2)
         self.assertEqual((self.game / "System/UT2003.ini").read_text(), TEMPLATE)
         self.assertFalse((self.game / "System/.ut2003-video").exists())
         response = subprocess.run(
@@ -138,9 +203,7 @@ class PatchTest(unittest.TestCase):
             "One-minute time limit reached; returning to the main menu.",
             response.stdout,
         )
-        self.assertGreaterEqual(
-            response.stdout.count("Unreal Tournament 2003"), 2
-        )
+        self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 2)
         self.assertEqual((self.game / "seconds").read_text().strip(), "60")
 
     def test_failed_restore_returns_to_main_menu(self):
@@ -162,9 +225,30 @@ class PatchTest(unittest.TestCase):
         self.assertEqual(response.returncode, 0, response.stderr)
         self.assertIn("No original SDL backup", response.stderr)
         self.assertIn("Returning to the main menu", response.stderr)
-        self.assertGreaterEqual(
-            response.stdout.count("Unreal Tournament 2003"), 2
+        self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 2)
+
+    def test_openspy_menu_applies_and_restores(self):
+        patch_dir = self.game / "LinuxPatch"
+        patch_dir.mkdir()
+        for name in ("apply.sh", "menu.sh", "openspy.py"):
+            shutil.copy2(Path(__file__).with_name(name), patch_dir / name)
+        (self.game / "System/ut2003-bin").write_text("placeholder")
+        (self.game / "System/ut2003-bin").chmod(0o700)
+        (self.game / "System/libSDL-1.2.so.0").write_text("placeholder")
+        response = subprocess.run(
+            ["bash", str(patch_dir / "apply.sh"), "--interactive"],
+            input="7\ny\n8\ny\n0\n",
+            env=dict(os.environ, HOME=str(self.home)),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
+        self.assertEqual(response.returncode, 0, response.stderr)
+        self.assertIn("Configured OpenSpy", response.stdout)
+        self.assertIn("Restored master-server settings", response.stdout)
+        self.assertGreaterEqual(response.stdout.count("Unreal Tournament 2003"), 3)
+        self.assertEqual((self.game / "System/UT2003.ini").read_text(), TEMPLATE)
 
     def test_recovery_only_stops_this_installation(self):
         patch_dir = self.game / "LinuxPatch"
