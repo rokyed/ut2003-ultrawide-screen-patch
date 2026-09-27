@@ -7,9 +7,12 @@ game=$(cd -- "$patch/.." && pwd)
 
 if [ "${1:-}" = '--help' ]; then
     cat <<'EOF'
-Usage: ./LinuxPatch/apply.sh [--width PIXELS --height PIXELS] [options]
+Usage: ./LinuxPatch/apply.sh [--interactive | --width PIXELS --height PIXELS [options]]
+No arguments starts a guided wizard in a terminal. Options run non-interactively.
 Run from any directory; LinuxPatch must sit directly inside your UT2003 directory.
+  --interactive   Show guided choices (also permits piped input)
   --check         Check installed game and 32-bit runtime dependencies; change nothing
+  --display-size  Choose primary X11 output size (may freeze on large displays)
   --native        Use native OpenGL instead of Mesa Zink (fullscreen may clip)
   --input-fix     Try experimental Escape-on-release binding (may resize on press)
   --no-input-fix  Leave Escape bindings alone (default)
@@ -78,7 +81,7 @@ if [ "$#" -eq 0 ] || [ "${1:-}" = '--interactive' ]; then
             ask_choice 'Size: 1) 1280x720 (recommended)  2) Primary display  3) Custom' '1 2 3' 1
             case "$REPLY" in
                 1) wizard_args+=(--width 1280 --height 720) ;;
-                2) : ;;
+                2) wizard_args+=(--display-size) ;;
                 3)
                     for dimension in width height; do
                         if [ "$dimension" = width ]; then min=320; else min=240; fi
@@ -155,6 +158,7 @@ height=
 use_sdl_compat=false
 use_input_fix=false
 check_only=false
+use_display_size=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --native) renderer=native ;;
@@ -164,6 +168,7 @@ while [ "$#" -gt 0 ]; do
         --no-input-fix) use_input_fix=false ;;
         --input-fix) use_input_fix=true ;;
         --check) check_only=true ;;
+        --display-size) use_display_size=true ;;
         --width|--height)
             option=$1
             shift
@@ -174,16 +179,19 @@ while [ "$#" -gt 0 ]; do
     esac
     shift
 done
-# Match the primary output by default. The game runs windowed: SDL exclusive
-# fullscreen clips the viewport, and KWin borderless stalled on this host.
-if [ -z "$width" ] || [ -z "$height" ]; then
+# Default to a smaller window. Full display resolution has stalled on this host.
+if [ "$use_display_size" = true ]; then
+    [ -z "$width" ] && [ -z "$height" ] || { echo '--display-size cannot be combined with --width/--height.' >&2; exit 2; }
     display_mode=
     if command -v xrandr >/dev/null 2>&1; then
         display_mode=$(xrandr --current 2>/dev/null | awk '$2 == "connected" && $3 == "primary" {split($4, p, "+"); print p[1]; exit}') || true
     fi
     if [[ ${display_mode:-} =~ ^([0-9]+)x([0-9]+)$ ]]; then
-        [ -n "$width" ] || width=${BASH_REMATCH[1]}
-        [ -n "$height" ] || height=${BASH_REMATCH[2]}
+        width=${BASH_REMATCH[1]}
+        height=${BASH_REMATCH[2]}
+    else
+        echo 'No primary X11 output detected; use --width and --height instead.' >&2
+        exit 1
     fi
 fi
 width=${width:-1280}

@@ -105,6 +105,51 @@ class PatchTest(unittest.TestCase):
         self.assertEqual(response.returncode, 2)
         self.assertIn("No terminal input available", response.stderr)
 
+    def test_recovery_only_stops_this_installation(self):
+        patch_dir = self.game / "LinuxPatch"
+        patch_dir.mkdir()
+        shutil.copy2(
+            Path(__file__).with_name("recover-ut2003.sh"),
+            patch_dir / "recover-ut2003.sh",
+        )
+        # A real executable at the target path is needed for /proc/PID/exe.
+        shutil.copy2("/usr/bin/sleep", self.game / "System/ut2003-bin")
+        child = subprocess.Popen([str(self.game / "System/ut2003-bin"), "30"])
+        try:
+            response = subprocess.run(
+                ["bash", str(patch_dir / "recover-ut2003.sh")],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=6,
+            )
+            self.assertIn(f"process {child.pid}", response.stdout)
+            self.assertIsNotNone(child.wait(timeout=3))
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+
+    def test_trial_launch_terminates_hung_game(self):
+        patch_dir = self.game / "LinuxPatch"
+        patch_dir.mkdir()
+        shutil.copy2(
+            Path(__file__).with_name("test-launch.sh"), patch_dir / "test-launch.sh"
+        )
+        launcher = self.game / "launch-ut2003.sh"
+        launcher.write_text("#!/bin/sh\nexec sleep 30\n")
+        launcher.chmod(0o700)
+        response = subprocess.run(
+            ["bash", str(patch_dir / "test-launch.sh")],
+            env=dict(os.environ, UT2003_TEST_SECONDS="5"),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(response.returncode, 124, response.stderr)
+        self.assertIn("time limit reached", response.stderr)
+
     def test_lutris_changes_only_matching_absolute_executable(self):
         match = self.lutris / "unreal-tournament-2003-own.yml"
         other = self.lutris / "unreal-tournament-2003-other.yml"
