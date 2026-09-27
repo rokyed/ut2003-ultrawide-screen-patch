@@ -19,7 +19,9 @@ SDL = {
 }
 
 
-def update_ini(path: Path, renderer: str = "zink") -> None:
+def update_ini(
+    path: Path, renderer: str = "zink", width: int = 1280, height: int = 720
+) -> None:
     text = path.read_text()
     lines = text.splitlines(keepends=True)
     sections = {}
@@ -45,6 +47,12 @@ def update_ini(path: Path, renderer: str = "zink") -> None:
         },
         "SDLDrv.SDLClient": {
             **SDL,
+            "WindowedViewportX": str(width),
+            "WindowedViewportY": str(height),
+            "FullscreenViewportX": str(width),
+            "FullscreenViewportY": str(height),
+            "MenuViewportX": str(min(width, height * 4 // 3)),
+            "MenuViewportY": str(height),
             "StartupFullscreen": "False" if renderer == "zink" else "True",
             "UseFullscreen": "False" if renderer == "zink" else "True",
         },
@@ -77,6 +85,33 @@ def update_ini(path: Path, renderer: str = "zink") -> None:
     print(f"Configured {path}")
 
 
+def update_escape(path: Path, width: int, height: int) -> None:
+    text = path.read_text()
+    replacement = f"Escape=SetRes {width}x{height}w|OnRelease ShowMenu"
+    # The no-op-sized SetRes is the key-down action: this engine only dispatches
+    # OnRelease when a command also ran on key-down (as its ScoreToggle alias does).
+    pattern = r"(?m)^Escape=(?:ShowMenu|SetRes [0-9]+x[0-9]+w\|OnRelease ShowMenu)$"
+    updated = re.sub(pattern, replacement, text, count=1)
+    if updated != text:
+        path.write_text(updated)
+        print(f"Bound Escape on key release in {path}")
+    elif not re.search(r"(?m)^Escape=" + re.escape(replacement[7:]) + r"$", text):
+        print(f"Kept custom Escape binding in {path}")
+
+
+def restore_escape(path: Path, backup: Path) -> None:
+    if not path.exists() or not backup.exists():
+        return
+    original = re.search(r"(?m)^Escape=.*$", backup.read_text())
+    if original is None:
+        return
+    text = path.read_text()
+    updated = re.sub(r"(?m)^Escape=.*$", lambda _: original.group(), text, count=1)
+    if updated != text:
+        path.write_text(updated)
+        print(f"Restored Escape binding in {path}")
+
+
 def update_lutris(game: Path) -> None:
     config_dir = (
         Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
@@ -104,14 +139,32 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("game", type=Path)
     parser.add_argument("--no-lutris", action="store_true")
+    parser.add_argument("--no-input-fix", action="store_true")
+    parser.add_argument("--restore-input", action="store_true")
     parser.add_argument("--renderer", choices=("zink", "native"), default="zink")
+    parser.add_argument("--width", type=int, default=1280)
+    parser.add_argument("--height", type=int, default=720)
     args = parser.parse_args()
+    if not (320 <= args.width <= 8192 and 240 <= args.height <= 8192):
+        parser.error("width and height must be within 320x240–8192x8192")
     game = args.game.resolve()
+    if args.restore_input:
+        restore_escape(
+            game / "System/User.ini", game / "Backup/System-User.ini.original"
+        )
+        restore_escape(
+            Path.home() / ".ut2003/System/User.ini", game / "Backup/User.ini.original"
+        )
+        return
     for path in (game / "System/UT2003.ini", game / "System/Default.ini"):
-        update_ini(path, args.renderer)
+        update_ini(path, args.renderer, args.width, args.height)
     user_ini = Path.home() / ".ut2003/System/UT2003.ini"
     if user_ini.exists():
-        update_ini(user_ini, args.renderer)
+        update_ini(user_ini, args.renderer, args.width, args.height)
+    if not args.no_input_fix:
+        for path in (game / "System/User.ini", Path.home() / ".ut2003/System/User.ini"):
+            if path.exists():
+                update_escape(path, args.width, args.height)
     if not args.no_lutris:
         update_lutris(game)
 
